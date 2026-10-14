@@ -35,6 +35,20 @@ app.get("/", (req, res) => {
     });
 });
 
+app.get("/users", async (req, res) => {
+    try {
+        const allUsers = await users.find({}, {
+            projection: { password: 0 }
+        }).toArray();
+
+        res.json(allUsers);
+    } catch (error) {
+        res.status(500).json({
+            message: "Server error"
+        });
+    }
+});
+
 app.post("/signup", async (req, res) => {
     const { username, password } = req.body;
 
