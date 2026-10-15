@@ -2,26 +2,28 @@ import { useState } from "react";
 import "./App.css";
 import Signup from "./components/Signup";
 import Login from "./components/Login";
+import CreateProject from "./components/CreateProject";
+import ViewProjects from "./components/ViewProjects";
 
 function App() {
-    const [showLogin, setShowLogin] = useState(true);
+    const [page, setPage] = useState("login");
 
     return (
         <div className="container">
-            <h1>Login and Signup</h1>
+            <h1>PA3 Project Management</h1>
 
             <div className="switch-buttons">
-                <button onClick={() => setShowLogin(true)}>
-                    Login
-                </button>
-
-                <button onClick={() => setShowLogin(false)}>
-                    Sign Up
-                </button>
+                <button onClick={() => setPage("login")}>Login</button>
+                <button onClick={() => setPage("signup")}>Sign Up</button>
+                <button onClick={() => setPage("create")}>Create Project</button>
+                <button onClick={() => setPage("view")}>View Projects</button>
             </div>
 
             <div className="single-form">
-                {showLogin ? <Login /> : <Signup />}
+                {page === "login" && <Login />}
+                {page === "signup" && <Signup />}
+                {page === "create" && <CreateProject />}
+                {page === "view" && <ViewProjects />}
             </div>
         </div>
     );

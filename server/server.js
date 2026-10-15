@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const { MongoClient } = require("mongodb");
+const { MongoClient, ObjectId } = require("mongodb");
 require("dotenv").config();
 
 const app = express();
@@ -11,6 +11,8 @@ app.use(cors());
 const client = new MongoClient(process.env.MONGO_URI);
 
 let users;
+let projects;
+let projectMemberships;
 
 async function startServer() {
     try {
@@ -18,7 +20,10 @@ async function startServer() {
         console.log("Connected to MongoDB");
 
         const db = client.db("pa2");
+
         users = db.collection("users");
+        projects = db.collection("projects");
+        projectMemberships = db.collection("projectMemberships");
 
         app.listen(9000, () => {
             console.log("Server running on port 9000");
@@ -107,6 +112,82 @@ app.post("/login", async (req, res) => {
         res.status(200).json({
             message: "Login successful"
         });
+    } catch (error) {
+        res.status(500).json({
+            message: "Server error"
+        });
+    }
+});
+
+app.post("/projects", async (req, res) => {
+    const { name, description, status, project_lead_id } = req.body;
+
+    if (!name || !description || !status || !project_lead_id) {
+        return res.status(400).json({
+            message: "All project fields are required"
+        });
+    }
+
+    if (!["Planning", "Active", "Completed"].includes(status)) {
+        return res.status(400).json({
+            message: "Invalid project status"
+        });
+    }
+
+    if (!ObjectId.isValid(project_lead_id)) {
+        return res.status(400).json({
+            message: "Invalid Project Lead"
+        });
+    }
+
+    try {
+        const leadId = new ObjectId(project_lead_id);
+
+        const lead = await users.findOne({
+            _id: leadId
+        });
+
+        if (!lead) {
+            return res.status(404).json({
+                message: "Project Lead does not exist"
+            });
+        }
+
+        const result = await projects.insertOne({
+            name: name,
+            description: description,
+            status: status,
+            project_lead_id: leadId
+        });
+
+        await projectMemberships.insertOne({
+            project_id: result.insertedId,
+            user_id: leadId
+        });
+
+        res.status(201).json({
+            message: "Project created successfully"
+        });
+    } catch (error) {
+        res.status(500).json({
+            message: "Server error"
+        });
+    }
+});
+
+app.get("/projects", async (req, res) => {
+    try {
+        const allProjects = await projects.find().toArray();
+
+        for (const project of allProjects) {
+            const lead = await users.findOne({
+                _id: project.project_lead_id
+            });
+
+            project.project_lead = lead ? lead.username : "Unknown";
+        }
+
+        res.json(allProjects);
     } catch (error) {
         res.status(500).json({
             message: "Server error"
