@@ -1,3 +1,4 @@
+
 const express = require("express");
 const cors = require("cors");
 const { MongoClient, ObjectId } = require("mongodb");
@@ -25,6 +26,11 @@ async function startServer() {
         projects = db.collection("projects");
         projectMemberships = db.collection("projectMemberships");
 
+        await projectMemberships.createIndex(
+            { project_id: 1, user_id: 1 },
+            { unique: true }
+        );
+
         app.listen(9000, () => {
             console.log("Server running on port 9000");
         });
@@ -35,9 +41,7 @@ async function startServer() {
 }
 
 app.get("/", (req, res) => {
-    res.json({
-        message: "Server is running"
-    });
+    res.json({ message: "Server is running" });
 });
 
 app.get("/users", async (req, res) => {
@@ -48,9 +52,7 @@ app.get("/users", async (req, res) => {
 
         res.json(allUsers);
     } catch (error) {
-        res.status(500).json({
-            message: "Server error"
-        });
+        res.status(500).json({ message: "Server error" });
     }
 });
 
@@ -64,9 +66,7 @@ app.post("/signup", async (req, res) => {
     }
 
     try {
-        const existingUser = await users.findOne({
-            username: username
-        });
+        const existingUser = await users.findOne({ username });
 
         if (existingUser) {
             return res.status(409).json({
@@ -74,18 +74,11 @@ app.post("/signup", async (req, res) => {
             });
         }
 
-        await users.insertOne({
-            username: username,
-            password: password
-        });
+        await users.insertOne({ username, password });
 
-        res.status(201).json({
-            message: "Signup successful"
-        });
+        res.status(201).json({ message: "Signup successful" });
     } catch (error) {
-        res.status(500).json({
-            message: "Server error"
-        });
+        res.status(500).json({ message: "Server error" });
     }
 });
 
@@ -99,9 +92,7 @@ app.post("/login", async (req, res) => {
     }
 
     try {
-        const user = await users.findOne({
-            username: username
-        });
+        const user = await users.findOne({ username });
 
         if (!user || user.password !== password) {
             return res.status(401).json({
@@ -109,13 +100,9 @@ app.post("/login", async (req, res) => {
             });
         }
 
-        res.status(200).json({
-            message: "Login successful"
-        });
+        res.status(200).json({ message: "Login successful" });
     } catch (error) {
-        res.status(500).json({
-            message: "Server error"
-        });
+        res.status(500).json({ message: "Server error" });
     }
 });
 
@@ -142,10 +129,7 @@ app.post("/projects", async (req, res) => {
 
     try {
         const leadId = new ObjectId(project_lead_id);
-
-        const lead = await users.findOne({
-            _id: leadId
-        });
+        const lead = await users.findOne({ _id: leadId });
 
         if (!lead) {
             return res.status(404).json({
@@ -154,9 +138,9 @@ app.post("/projects", async (req, res) => {
         }
 
         const result = await projects.insertOne({
-            name: name,
-            description: description,
-            status: status,
+            name,
+            description,
+            status,
             project_lead_id: leadId
         });
 
@@ -169,9 +153,7 @@ app.post("/projects", async (req, res) => {
             message: "Project created successfully"
         });
     } catch (error) {
-        res.status(500).json({
-            message: "Server error"
-        });
+        res.status(500).json({ message: "Server error" });
     }
 });
 
@@ -189,9 +171,150 @@ app.get("/projects", async (req, res) => {
 
         res.json(allProjects);
     } catch (error) {
-        res.status(500).json({
-            message: "Server error"
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// View members of a project
+app.get("/projects/:projectId/members", async (req, res) => {
+    const { projectId } = req.params;
+
+    if (!ObjectId.isValid(projectId)) {
+        return res.status(400).json({ message: "Invalid project ID" });
+    }
+
+    try {
+        const project = await projects.findOne({
+            _id: new ObjectId(projectId)
         });
+
+        if (!project) {
+            return res.status(404).json({ message: "Project does not exist" });
+        }
+
+        const memberships = await projectMemberships.find({
+            project_id: project._id
+        }).toArray();
+
+        const members = [];
+
+        for (const membership of memberships) {
+            const user = await users.findOne({
+                _id: membership.user_id
+            });
+
+            if (user) {
+                members.push({
+                    _id: user._id,
+                    username: user.username,
+                    isLead: user._id.equals(project.project_lead_id)
+                });
+            }
+        }
+
+        res.json(members);
+    } catch (error) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// Add a member
+app.post("/projects/:projectId/members", async (req, res) => {
+    const { projectId } = req.params;
+    const { user_id } = req.body;
+
+    if (!user_id || !ObjectId.isValid(projectId) || !ObjectId.isValid(user_id)) {
+        return res.status(400).json({ message: "Invalid project or user" });
+    }
+
+    try {
+        const projectObjectId = new ObjectId(projectId);
+        const userObjectId = new ObjectId(user_id);
+
+        const project = await projects.findOne({ _id: projectObjectId });
+
+        if (!project) {
+            return res.status(404).json({ message: "Project does not exist" });
+        }
+
+        const user = await users.findOne({ _id: userObjectId });
+
+        if (!user) {
+            return res.status(404).json({ message: "User does not exist" });
+        }
+
+        const existingMembership = await projectMemberships.findOne({
+            project_id: projectObjectId,
+            user_id: userObjectId
+        });
+
+        if (existingMembership) {
+            return res.status(409).json({
+                message: "User is already a member"
+            });
+        }
+
+        await projectMemberships.insertOne({
+            project_id: projectObjectId,
+            user_id: userObjectId
+        });
+
+        res.status(201).json({ message: "Member added successfully" });
+    } catch (error) {
+        if (error.code === 11000) {
+            return res.status(409).json({
+                message: "User is already a member"
+            });
+        }
+
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// Remove a member
+app.delete("/projects/:projectId/members/:userId", async (req, res) => {
+    const { projectId, userId } = req.params;
+
+    if (!ObjectId.isValid(projectId) || !ObjectId.isValid(userId)) {
+        return res.status(400).json({ message: "Invalid project or user" });
+    }
+
+    try {
+        const projectObjectId = new ObjectId(projectId);
+        const userObjectId = new ObjectId(userId);
+
+        const project = await projects.findOne({ _id: projectObjectId });
+
+        if (!project) {
+            return res.status(404).json({ message: "Project does not exist" });
+        }
+
+        const user = await users.findOne({ _id: userObjectId });
+
+        if (!user) {
+            return res.status(404).json({ message: "User does not exist" });
+        }
+
+        if (project.project_lead_id.equals(userObjectId)) {
+            return res.status(400).json({
+                message: "Cannot remove the Project Lead"
+            });
+        }
+
+        const result = await projectMemberships.deleteOne({
+            project_id: projectObjectId,
+            user_id: userObjectId
+        });
+
+        if (result.deletedCount === 0) {
+            return res.status(404).json({
+                message: "User is not a member of this project"
+            });
+        }
+
+        res.json({ message: "Member removed successfully" });
+    } catch (error) {
+        res.status(500).json({ message: "Server error" });
     }
 });
 
